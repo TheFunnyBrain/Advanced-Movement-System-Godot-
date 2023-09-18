@@ -59,6 +59,9 @@ var gravity : float = ProjectSettings.get_setting("physics/3d/default_gravity")
 ## the distance to the stair that the script will start detecting it
 @export var max_close_stair_distance : float = 0.75
 
+## check as to if we can mantle at this moment in time
+@export var can_mantle := false
+var mantle_position :Vector3
 
 @export var roll_magnitude := 17.0
 
@@ -357,8 +360,9 @@ func _physics_process(delta):
 					Global.rotation_mode.aiming:
 						smooth_character_rotation(-camera_root.HObject.transform.basis.z ,15.0,delta)
 			#------------------ Mantle Check ------------------#
-			if input_is_moving == true:
-				mantle_check()
+			if input_is_moving == false:
+				can_mantle = false
+				
 		Global.movement_state.mantling:
 			pass
 		Global.movement_state.ragdoll:
@@ -410,12 +414,15 @@ func crouch_update(delta):
 	mesh_ref.transform.origin.y = clamp(mesh_ref.transform.origin.y,0.0,0.5)
 	collision_shape_ref.shape.height = clamp(collision_shape_ref.shape.height,crouch_height,default_height)
 
-
+#Used for stair climbing
 func stair_move():
 	var direct_state = character_node.get_world_3d().direct_space_state
+	#make a new rayquery
 	var obs_ray_info : PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.new()
+	#ignore player, and set ray 
 	obs_ray_info.exclude = [RID(character_node)]
 	obs_ray_info.from = mesh_ref.global_transform.origin
+	# if there's a direction, test it in that direction?
 	if movement_direction:
 		obs_ray_info.to = obs_ray_info.from + Vector3(0, 0, max_close_stair_distance).rotated(Vector3.UP,movement_direction)
 	
@@ -424,24 +431,35 @@ func stair_move():
 	if first_collision and input_is_moving:
 		var climb_ray_info : PhysicsRayQueryParameters3D = PhysicsRayQueryParameters3D.new()
 		climb_ray_info.exclude = [RID(character_node)]
+		#Set from to max stair height
 		climb_ray_info.from = first_collision.collider.global_position + Vector3(0, max_stair_climb_height, 0)
+		#I think this is the middle of the obstacle?
 		climb_ray_info.to = first_collision.collider.global_position
+		#Check if the obstacle is within the bounds of the stair height?
 		var stair_top_collision = direct_state.intersect_ray(climb_ray_info)
+		#If so, the obstacle height is < stair height, so snap to top of stair?
 		if stair_top_collision:
 			if stair_top_collision.position.y - character_node.global_position.y > 0 and stair_top_collision.position.y - character_node.global_position.y < 0.15:
 				movement_state = Global.movement_state.grounded
 				is_moving_on_stair = true
 				character_node.position.y += stair_top_collision.position.y - character_node.global_position.y
 				character_node.global_position += Vector3(0, 0, 0.01).rotated(Vector3.UP,movement_direction)
+				can_mantle = false
 			else:
 				await get_tree().create_timer(0.4).timeout
 				is_moving_on_stair = false
+				can_mantle = false
 		else:
 			await get_tree().create_timer(0.4).timeout
 			is_moving_on_stair = false
+			can_mantle = true
+			mantle_position = climb_ray_info.to
+			mantle_position
 	else:
+		#There is no obstacle
 		await get_tree().create_timer(0.4).timeout
 		is_moving_on_stair = false
+		can_mantle = false
 
 
 
@@ -604,8 +622,16 @@ func calc_animation_data(): # it is used to modify the animation data to get the
 #		animation_is_moving_backward_relative_to_camera = true
 	
 
-func mantle_check():
-	pass
+func mantle():
+	var proposed_movement = mesh_ref.transform.origin
+	print_debug(proposed_movement)
+	proposed_movement.y += mantle_position.y
+	print_debug(proposed_movement)
+	if(!character_node.move_and_collide(proposed_movement, true)):
+		mesh_ref.transform.origin.y = mantle_position.y * 2
+	
+	can_mantle = false;
+	return can_mantle
 
 func jump() -> void:
 	if ground_check.is_colliding() and not head_bonked:

@@ -120,6 +120,8 @@ func _physics_process(delta):
 		if Input.is_action_just_pressed("jump"):
 			if character_component.stance != Global.stance.standing:
 				character_component.stance = Global.stance.standing
+			elif character_component.can_mantle:
+				character_component.mantle()
 			else:
 				character_component.jump()
 	else:
@@ -145,10 +147,12 @@ func _input(event):
 		character_component.camera_root.camera_v += -event.relative.y * mouse_sensitivity
 	#------------------ Motion Warping test------------------#
 	if event.is_action_pressed("fire"):
+		lock_system.add_lock("attacking")
 		character_component.anim_ref.active = false
 		get_node("../MotionWarping").add_sync_position(Vector3(4.762,1.574,-1.709),Vector3(0,PI,0),"kick_target",self,character_component.mesh_ref)
 		get_node("../AnimationPlayer").play("Kick")
 		await get_tree().create_timer(2.6).timeout
+		lock_system.remove_lock("attacking")
 		character_component.anim_ref.active = true
 		
 	#------------------ Change Camera View ------------------#
